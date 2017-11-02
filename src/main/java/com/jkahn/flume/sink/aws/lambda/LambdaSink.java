@@ -123,24 +123,31 @@ public class LambdaSink extends AbstractSink implements Configurable {
 			Event event = channel.take();
 			
 			String message = new String(event.getBody(), "UTF-8").trim();
+			long timestamp = System.currentTimeMillis() / 1000L;
 			LOG.debug("Received event with message: " + message);
 			
 			// {@see http://docs.aws.amazon.com/sdk-for-java/v1/developer-guide/basics-async.html}
 			InvokeRequest request = new InvokeRequest()
 					.withFunctionName(this.functionName)
-					.withPayload(message);
+					.withPayload("{\"message\":\"" + message + "\", \"timestamp\":" + timestamp + "}");
 			
 			// invoke the lambda function and inspect the result...
 			// {@see http://docs.aws.amazon.com/AWSJavaSDK/latest/javadoc/com/amazonaws/services/lambda/model/InvokeResult.html}
 			InvokeResult result = lambdaClient.invoke(request);
 			
 			// Lambda will return an HTTP status code will be in the 200 range for successful
-			// request. Because we want to be generic of the Lambda function itself, we will
-			// not check the payload here, but that could be added as well.
-			if (result.getStatusCode() >= 200 && result.getStatusCode() < 300) {
+			// request, even if an error occurred in the Lambda function itself. Here, we check
+			// if an error occurred via getFunctionError() before checking the status code.
+			if ("Handled".equals(result.getFunctionError()) || "Unhandled".equals(result.getFunctionError())) {
+				LOG.warn("Lambda function reported " + result.getFunctionError() + " function error");
+				status = Status.BACKOFF;
+				transaction.rollback();
+			} else if (result.getStatusCode() >= 200 && result.getStatusCode() < 300) {
+				LOG.debug("Lambda function completed successfully");
 				status = Status.READY;
 				transaction.commit();
 			} else {
+				LOG.debug("Lambda function error occurred");
 				status = Status.BACKOFF;
 				transaction.rollback();
 			}
