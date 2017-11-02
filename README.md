@@ -25,7 +25,7 @@ a1.sinks.k1.secretKey = ...
 
 ### Options
 
-| Name | Descrption | Default | Optional |
+| Name | Description | Default | Optional |
 |:----:|:----------:|:-------:|:--------:|
 | region | Region of the Lambda function | us-east-1 | N |
 | functionName | Name of the Lambda function that will process messages | null | Y |
