@@ -63,10 +63,11 @@ public class LambdaSink extends AbstractSink implements Configurable {
 		// set the AWS Region, defaulting to us-east-1
 		String regionName = context.getString("region", "us-east-1");
 		this.region = Regions.fromName(regionName);
-		LOG.debug("Region: " + region.getName());
+		LOG.debug("[flume-aws-lambda] Region: " + region.getName());
 		
 		// set the lambda function name for this sink to invoke
 		this.functionName = context.getString("functionName");
+		LOG.debug("[flume-aws-lambda] Function: " + this.functionName);
 		
 		// get access and secret keys from context, configure AWS Credentials if
 		// values are present...
@@ -74,7 +75,7 @@ public class LambdaSink extends AbstractSink implements Configurable {
 		String secretKey = context.getString("secretKey");
 		
 		if (!StringUtils.isBlank(accessKey) && !StringUtils.isBlank(secretKey)) {
-			LOG.debug("Setting AWS credentials");
+			LOG.debug("[flume-aws-lambda] Setting AWS credentials");
 			this.credentials = new BasicAWSCredentials(accessKey, secretKey);
 		}
 		
@@ -122,35 +123,43 @@ public class LambdaSink extends AbstractSink implements Configurable {
 		try {
 			Event event = channel.take();
 			
-			String message = new String(event.getBody(), "UTF-8").trim();
-			long timestamp = System.currentTimeMillis() / 1000L;
-			LOG.debug("Received event with message: " + message);
-			
-			// {@see http://docs.aws.amazon.com/sdk-for-java/v1/developer-guide/basics-async.html}
-			InvokeRequest request = new InvokeRequest()
-					.withFunctionName(this.functionName)
-					.withPayload("{\"message\":\"" + message + "\", \"timestamp\":" + timestamp + "}");
-			
-			// invoke the lambda function and inspect the result...
-			// {@see http://docs.aws.amazon.com/AWSJavaSDK/latest/javadoc/com/amazonaws/services/lambda/model/InvokeResult.html}
-			InvokeResult result = lambdaClient.invoke(request);
-			
-			// Lambda will return an HTTP status code will be in the 200 range for successful
-			// request, even if an error occurred in the Lambda function itself. Here, we check
-			// if an error occurred via getFunctionError() before checking the status code.
-			if ("Handled".equals(result.getFunctionError()) || "Unhandled".equals(result.getFunctionError())) {
-				LOG.warn("Lambda function reported " + result.getFunctionError() + " function error");
+			// if no events to process or an empty event, skip it
+			// this generally happens when the channel is empty
+			if (event == null || event.getBody().length == 0) {
 				status = Status.BACKOFF;
-				transaction.rollback();
-			} else if (result.getStatusCode() >= 200 && result.getStatusCode() < 300) {
-				LOG.debug("Lambda function completed successfully");
-				status = Status.READY;
-				transaction.commit();
+				this.sinkCounter.incrementBatchEmptyCount();
 			} else {
-				LOG.debug("Lambda function error occurred");
-				status = Status.BACKOFF;
-				transaction.rollback();
+				String message = new String(event.getBody(), "UTF-8").trim();
+				long timestamp = System.currentTimeMillis() / 1000L;
+				LOG.debug("Received event with message: " + message);
+				
+				// {@see http://docs.aws.amazon.com/sdk-for-java/v1/developer-guide/basics-async.html}
+				InvokeRequest request = new InvokeRequest()
+						.withFunctionName(this.functionName)
+						.withPayload("{\"message\":\"" + message + "\", \"timestamp\":" + timestamp + "}");
+				
+				// invoke the lambda function and inspect the result...
+				// {@see http://docs.aws.amazon.com/AWSJavaSDK/latest/javadoc/com/amazonaws/services/lambda/model/InvokeResult.html}
+				InvokeResult result = lambdaClient.invoke(request);
+				
+				// Lambda will return an HTTP status code will be in the 200 range for successful
+				// request, even if an error occurred in the Lambda function itself. Here, we check
+				// if an error occurred via getFunctionError() before checking the status code.
+				if ("Handled".equals(result.getFunctionError()) || "Unhandled".equals(result.getFunctionError())) {
+					LOG.warn("Lambda function reported " + result.getFunctionError() + " function error");
+					throw new EventDeliveryException("Failure invoking Lambda function: " + result.getFunctionError());
+				} else if (result.getStatusCode() >= 200 && result.getStatusCode() < 300) {
+					LOG.debug("Lambda function completed successfully");
+					status = Status.READY;
+					this.sinkCounter.incrementBatchCompleteCount();
+				} else {
+					LOG.debug("Lambda function error occurred");
+					throw new EventDeliveryException("Failure invoking Lambda function with status code: " + result.getStatusCode());
+				}
 			}
+			
+			transaction.commit();
+			this.sinkCounter.addToEventDrainSuccessCount(1);
 		} catch (Throwable t) {
 			transaction.rollback();
 			// log the exception
