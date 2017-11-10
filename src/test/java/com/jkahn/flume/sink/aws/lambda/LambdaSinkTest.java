@@ -100,7 +100,7 @@ public class LambdaSinkTest extends TestCase {
 	 * @throws Exception
 	 */
 	@Test
-	public void testProcessLambdaError() throws Exception {
+	public void testProcessLambdaError() throws EventDeliveryException {
 		// 
 		LambdaSink uSink = new LambdaSink();
 		LambdaSink mockSink = Mockito.spy(uSink);
@@ -130,11 +130,10 @@ public class LambdaSinkTest extends TestCase {
 		mockSink.setLambdaClient(mockLambdaClient);
 		
 		// test result
-		Sink.Status status = mockSink.process();
-		assertEquals(Sink.Status.BACKOFF, status);
-		Mockito.verify(mockTransaction, Mockito.times(1)).begin();
-		Mockito.verify(mockTransaction, Mockito.times(1)).rollback();
-		Mockito.verify(mockTransaction, Mockito.times(1)).close();
+		assertThrows(EventDeliveryException.class, () -> {
+			Sink.Status status = mockSink.process();
+			assertEquals(Sink.Status.BACKOFF, status);
+		});
 	}
 	
 	/**
@@ -184,7 +183,8 @@ public class LambdaSinkTest extends TestCase {
 		
 		// test result
 		assertThrows(EventDeliveryException.class, () -> {
-			mockSink.process();
+			Sink.Status status = mockSink.process();
+			assertEquals(Sink.Status.BACKOFF, status);
 		});
 	}
 	
