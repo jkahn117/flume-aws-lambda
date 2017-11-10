@@ -5,7 +5,7 @@ Flume sink for AWS Lambda
 ## Build and Install
 
 ```
-$ mvn clean package
+$ mvn install
 
 $ cp target/flume-aws-lambda-{version}.jar FLUME_HOME_DIR/plugins.d/flume-aws-lambda/lib
 ```
@@ -28,7 +28,7 @@ a1.sinks.k1.secretKey = ...
 | Name | Description | Default | Optional |
 |:----:|:----------:|:-------:|:--------:|
 | region | Region of the Lambda function | us-east-1 | N |
-| functionName | Name of the Lambda function that will process messages | null | Y |
+| functionName | Name of the Lambda function that will process messages | null | N |
 | accessKey | Access key with permission to invoke Lambda function | null | Y |
 | secretKey | Secret key associated with access key | null | Y |
 
