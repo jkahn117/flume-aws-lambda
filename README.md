@@ -5,7 +5,7 @@ Flume sink for AWS Lambda
 ## Build and Install
 
 ```
-$ mvn install
+$ mvn package shade:shade
 
 $ cp target/flume-aws-lambda-{version}.jar FLUME_HOME_DIR/plugins.d/flume-aws-lambda/lib
 ```
